@@ -17,12 +17,17 @@ class VoiceService {
       await speech.initialize();
     }
     await speech.listen(
-      localeId: 'en_US',
       onResult: (result) => onText(result.recognizedWords),
+      listenOptions: SpeechListenOptions(
+        localeId: 'en_US',
+        listenMode: ListenMode.confirmation,
+        partialResults: true,
+      ),
     );
   }
 
   Future<void> stopListening() => speech.stop();
+
   Future<void> speak(String text) async {
     await tts.stop();
     await tts.speak(text);
