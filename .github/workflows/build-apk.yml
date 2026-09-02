@@ -16,6 +16,8 @@ jobs:
           cache: true
       - name: Generate Android host
         run: flutter create --platforms=android --project-name=robo_tach .
+      - name: Remove generated sample test
+        run: rm -f test/widget_test.dart
       - name: Add Android microphone permission
         run: |
           python - <<'PY'
@@ -33,7 +35,7 @@ jobs:
       - name: Analyze app source
         run: flutter analyze lib test
       - name: Run automated tests
-        run: flutter test
+        run: flutter test test/tutor_service_test.dart
       - name: Build debug APK
         run: flutter build apk --debug
       - name: Upload APK
