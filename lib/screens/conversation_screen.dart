@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import '../services/ai_tutor_service.dart';
 import '../services/memory_service.dart';
-import '../services/tutor_service.dart';
 import '../services/voice_service.dart';
 
 class ConversationScreen extends StatefulWidget {
@@ -14,13 +14,14 @@ class ConversationScreen extends StatefulWidget {
 
 class _ConversationScreenState extends State<ConversationScreen> {
   final VoiceService _voice = VoiceService();
-  final TutorService _tutor = TutorService();
+  final AiTutorService _tutor = AiTutorService();
   final MemoryService _memory = MemoryService();
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scroll = ScrollController();
   final List<_ChatLine> _messages = [];
   bool _ready = false;
   bool _listening = false;
+  bool _thinking = false;
   String? _voiceError;
 
   String get _title => widget.scenario == null ? (widget.teacherMode ? 'Teacher Mode' : 'Friend Mode') : '${widget.scenario} Role-Play';
@@ -56,7 +57,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
   }
 
   Future<void> _toggleMic() async {
-    if (!_ready) return;
+    if (!_ready || _thinking) return;
     try {
       if (_listening) {
         await _voice.stopListening();
@@ -75,13 +76,15 @@ class _ConversationScreenState extends State<ConversationScreen> {
 
   Future<void> _send() async {
     final input = _controller.text.trim();
-    if (input.isEmpty) return;
+    if (input.isEmpty || _thinking) return;
     try { await _voice.stopListening(); } catch (_) {}
     if (!mounted) return;
-    setState(() { _listening = false; _messages.add(_ChatLine(fromRobot: false, text: input)); _controller.clear(); });
+    final history = _messages.map((m) => TutorMessage(m.fromRobot ? 'assistant' : 'user', m.text)).toList();
+    setState(() { _listening = false; _thinking = true; _messages.add(_ChatLine(fromRobot: false, text: input)); _controller.clear(); });
 
-    final reply = _tutor.reply(input: input, teacherMode: widget.teacherMode, scenario: widget.scenario);
-    setState(() => _messages.add(_ChatLine(fromRobot: true, text: reply)));
+    final reply = await _tutor.reply(input: input, teacherMode: widget.teacherMode, scenario: widget.scenario, history: history);
+    if (!mounted) return;
+    setState(() { _thinking = false; _messages.add(_ChatLine(fromRobot: true, text: reply)); });
     _scrollToBottom();
     await _memory.recordPractice(topic: widget.scenario ?? (widget.teacherMode ? 'Teacher Mode' : 'Friend Mode'));
     try { await _voice.speak(reply); } catch (_) {
@@ -100,6 +103,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
     _controller.dispose();
     _scroll.dispose();
     _voice.stopListening();
+    _tutor.dispose();
     super.dispose();
   }
 
@@ -109,7 +113,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
         body: SafeArea(child: Column(children: [
           const SizedBox(height: 12),
           const Icon(Icons.smart_toy_rounded, size: 78),
-          Text(_listening ? 'Listening...' : (_ready ? 'Robo-Tach is ready' : 'Voice unavailable — typing works')),
+          Text(_thinking ? 'Robo-Tach is thinking...' : (_listening ? 'Listening...' : (_ready ? 'Robo-Tach is ready' : 'Voice unavailable — typing works'))),
           if (_voiceError != null) Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 0), child: Text(_voiceError!, textAlign: TextAlign.center)),
           const SizedBox(height: 8),
           Expanded(child: ListView.builder(controller: _scroll, padding: const EdgeInsets.symmetric(horizontal: 16), itemCount: _messages.length, itemBuilder: (context, index) {
@@ -117,11 +121,11 @@ class _ConversationScreenState extends State<ConversationScreen> {
             return Align(alignment: message.fromRobot ? Alignment.centerLeft : Alignment.centerRight, child: Card(child: Padding(padding: const EdgeInsets.all(12), child: Text(message.text))));
           })),
           Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 14), child: Row(children: [
-            IconButton.filled(onPressed: _ready ? _toggleMic : null, icon: Icon(_listening ? Icons.stop : Icons.mic)),
+            IconButton.filled(onPressed: _ready && !_thinking ? _toggleMic : null, icon: Icon(_listening ? Icons.stop : Icons.mic)),
             const SizedBox(width: 8),
-            Expanded(child: TextField(controller: _controller, textInputAction: TextInputAction.send, onSubmitted: (_) => _send(), decoration: const InputDecoration(hintText: 'Speak or type in English...', border: OutlineInputBorder()))),
+            Expanded(child: TextField(enabled: !_thinking, controller: _controller, textInputAction: TextInputAction.send, onSubmitted: (_) => _send(), decoration: const InputDecoration(hintText: 'Speak or type in English...', border: OutlineInputBorder()))),
             const SizedBox(width: 8),
-            IconButton.filled(onPressed: _send, icon: const Icon(Icons.send)),
+            IconButton.filled(onPressed: _thinking ? null : _send, icon: _thinking ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.send)),
           ])),
         ])),
       );
