@@ -16,6 +16,18 @@ jobs:
           cache: true
       - name: Generate Android host
         run: flutter create --platforms=android --project-name=robo_tach .
+      - name: Add Android microphone permission
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('android/app/src/main/AndroidManifest.xml')
+          s = p.read_text()
+          marker = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
+          permission = '<uses-permission android:name="android.permission.RECORD_AUDIO"/>'
+          if permission not in s:
+              s = s.replace(marker, marker + '\n    ' + permission)
+          p.write_text(s)
+          PY
       - name: Get packages
         run: flutter pub get
       - name: Analyze app source
