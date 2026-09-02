@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'conversation_screen.dart';
 import 'progress_screen.dart';
+import 'roleplay_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -25,23 +26,11 @@ class HomeScreen extends StatelessWidget {
             const Text('Hey Rachid!', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
             const Text('Your English buddy is ready.'),
             const SizedBox(height: 30),
-            SizedBox(
-              width: 230,
-              child: FilledButton.icon(
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ConversationScreen(teacherMode: false))),
-                icon: const Icon(Icons.forum_outlined),
-                label: const Text('Friend Mode'),
-              ),
-            ),
+            _button(context, Icons.forum_outlined, 'Friend Mode', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ConversationScreen(teacherMode: false)))),
             const SizedBox(height: 12),
-            SizedBox(
-              width: 230,
-              child: FilledButton.icon(
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ConversationScreen(teacherMode: true))),
-                icon: const Icon(Icons.school_outlined),
-                label: const Text('Teacher Mode'),
-              ),
-            ),
+            _button(context, Icons.school_outlined, 'Teacher Mode', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ConversationScreen(teacherMode: true)))),
+            const SizedBox(height: 12),
+            _button(context, Icons.theater_comedy_outlined, 'Role-Play', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RolePlayScreen()))),
             const SizedBox(height: 12),
             SizedBox(
               width: 230,
@@ -54,5 +43,10 @@ class HomeScreen extends StatelessWidget {
             const Spacer(),
           ]),
         ),
+      );
+
+  Widget _button(BuildContext context, IconData icon, String label, VoidCallback action) => SizedBox(
+        width: 230,
+        child: FilledButton.icon(onPressed: action, icon: Icon(icon), label: Text(label)),
       );
 }
