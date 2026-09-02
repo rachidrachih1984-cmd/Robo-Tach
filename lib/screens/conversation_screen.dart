@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/tutor_service.dart';
 import '../services/voice_service.dart';
 
 class ConversationScreen extends StatefulWidget {
@@ -11,10 +12,13 @@ class ConversationScreen extends StatefulWidget {
 
 class _ConversationScreenState extends State<ConversationScreen> {
   final VoiceService _voice = VoiceService();
+  final TutorService _tutor = TutorService();
   final TextEditingController _controller = TextEditingController();
+  final ScrollController _scroll = ScrollController();
   final List<_ChatLine> _messages = [];
   bool _ready = false;
   bool _listening = false;
+  String? _voiceError;
 
   @override
   void initState() {
@@ -29,62 +33,84 @@ class _ConversationScreenState extends State<ConversationScreen> {
   }
 
   Future<void> _initVoice() async {
-    final ready = await _voice.initialize();
-    if (!mounted) return;
-    setState(() => _ready = ready);
-    if (ready) {
-      await _voice.speak(_messages.first.text);
+    try {
+      final ready = await _voice.initialize();
+      if (!mounted) return;
+      setState(() {
+        _ready = ready;
+        _voiceError = ready ? null : 'Microphone speech recognition is unavailable. You can still type.';
+      });
+      if (ready) await _voice.speak(_messages.first.text);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _voiceError = 'Voice could not start. You can still type and send messages.');
     }
   }
 
   Future<void> _toggleMic() async {
     if (!_ready) return;
-    if (_listening) {
-      await _voice.stopListening();
-      if (mounted) setState(() => _listening = false);
-      return;
-    }
-
-    setState(() => _listening = true);
-    await _voice.startListening((text) {
+    try {
+      if (_listening) {
+        await _voice.stopListening();
+        if (mounted) setState(() => _listening = false);
+        return;
+      }
+      setState(() {
+        _listening = true;
+        _voiceError = null;
+      });
+      await _voice.startListening((text) {
+        if (!mounted) return;
+        setState(() {
+          _controller.text = text;
+          _controller.selection = TextSelection.collapsed(offset: text.length);
+        });
+      });
+    } catch (_) {
       if (!mounted) return;
-      setState(() => _controller.text = text);
-    });
+      setState(() {
+        _listening = false;
+        _voiceError = 'I could not use the microphone. Check microphone permission or type your sentence.';
+      });
+    }
   }
 
   Future<void> _send() async {
     final input = _controller.text.trim();
     if (input.isEmpty) return;
-
-    await _voice.stopListening();
+    try {
+      await _voice.stopListening();
+    } catch (_) {}
+    if (!mounted) return;
     setState(() {
       _listening = false;
       _messages.add(_ChatLine(fromRobot: false, text: input));
       _controller.clear();
     });
 
-    final reply = _makeDemoReply(input);
+    final reply = _tutor.reply(input: input, teacherMode: widget.teacherMode);
     setState(() => _messages.add(_ChatLine(fromRobot: true, text: reply)));
-    await _voice.speak(reply);
+    _scrollToBottom();
+    try {
+      await _voice.speak(reply);
+    } catch (_) {
+      if (mounted) setState(() => _voiceError = 'Text reply works, but I could not play the voice.');
+    }
   }
 
-  String _makeDemoReply(String input) {
-    final lower = input.toLowerCase();
-    if (widget.teacherMode) {
-      if (lower.contains('i go') && lower.contains('yesterday')) {
-        return 'Good try! Say: I went yesterday. "Went" is the past form of "go". Can you repeat it?';
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scroll.hasClients) {
+        _scroll.animateTo(_scroll.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
       }
-      return 'Nice sentence. I understood you. Try saying it once more, slowly and clearly.';
-    }
-    if (lower.contains('good') || lower.contains('fine')) {
-      return 'That is great! What made your day good?';
-    }
-    return 'I am listening, my friend. Tell me a little more.';
+    });
   }
 
   @override
   void dispose() {
     _controller.dispose();
+    _scroll.dispose();
     _voice.stopListening();
     super.dispose();
   }
@@ -93,62 +119,51 @@ class _ConversationScreenState extends State<ConversationScreen> {
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(title: Text(widget.teacherMode ? 'Teacher Mode' : 'Friend Mode')),
         body: SafeArea(
-          child: Column(
-            children: [
-              const SizedBox(height: 12),
-              const Icon(Icons.smart_toy_rounded, size: 78),
-              Text(
-                _listening ? 'Listening...' : (_ready ? 'Robo-Tach is ready' : 'Preparing microphone...'),
-              ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: _messages.length,
-                  itemBuilder: (context, index) {
-                    final message = _messages[index];
-                    return Align(
-                      alignment: message.fromRobot ? Alignment.centerLeft : Alignment.centerRight,
-                      child: Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Text(message.text),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
+          child: Column(children: [
+            const SizedBox(height: 12),
+            const Icon(Icons.smart_toy_rounded, size: 78),
+            Text(_listening ? 'Listening...' : (_ready ? 'Robo-Tach is ready' : 'Voice unavailable — typing works')),
+            if (_voiceError != null)
               Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 14),
-                child: Row(
-                  children: [
-                    IconButton.filled(
-                      onPressed: _ready ? _toggleMic : null,
-                      icon: Icon(_listening ? Icons.stop : Icons.mic),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextField(
-                        controller: _controller,
-                        textInputAction: TextInputAction.send,
-                        onSubmitted: (_) => _send(),
-                        decoration: const InputDecoration(
-                          hintText: 'Speak or type in English...',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton.filled(
-                      onPressed: _send,
-                      icon: const Icon(Icons.send),
-                    ),
-                  ],
-                ),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: Text(_voiceError!, textAlign: TextAlign.center),
               ),
-            ],
-          ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: ListView.builder(
+                controller: _scroll,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: _messages.length,
+                itemBuilder: (context, index) {
+                  final message = _messages[index];
+                  return Align(
+                    alignment: message.fromRobot ? Alignment.centerLeft : Alignment.centerRight,
+                    child: Card(child: Padding(padding: const EdgeInsets.all(12), child: Text(message.text))),
+                  );
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 14),
+              child: Row(children: [
+                IconButton.filled(
+                  onPressed: _ready ? _toggleMic : null,
+                  icon: Icon(_listening ? Icons.stop : Icons.mic),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _controller,
+                    textInputAction: TextInputAction.send,
+                    onSubmitted: (_) => _send(),
+                    decoration: const InputDecoration(hintText: 'Speak or type in English...', border: OutlineInputBorder()),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton.filled(onPressed: _send, icon: const Icon(Icons.send)),
+              ]),
+            ),
+          ]),
         ),
       );
 }
