@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/memory_service.dart';
 import '../services/tutor_service.dart';
 import '../services/voice_service.dart';
 
@@ -13,6 +14,7 @@ class ConversationScreen extends StatefulWidget {
 class _ConversationScreenState extends State<ConversationScreen> {
   final VoiceService _voice = VoiceService();
   final TutorService _tutor = TutorService();
+  final MemoryService _memory = MemoryService();
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scroll = ScrollController();
   final List<_ChatLine> _messages = [];
@@ -91,6 +93,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
     final reply = _tutor.reply(input: input, teacherMode: widget.teacherMode);
     setState(() => _messages.add(_ChatLine(fromRobot: true, text: reply)));
     _scrollToBottom();
+    await _memory.recordPractice(topic: widget.teacherMode ? 'Teacher Mode' : 'Friend Mode');
     try {
       await _voice.speak(reply);
     } catch (_) {
